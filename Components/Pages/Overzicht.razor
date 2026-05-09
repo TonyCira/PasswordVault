@@ -1,0 +1,298 @@
+@page "/overzicht"
+@using System.IO
+@using PasswordVault.Models
+@using PasswordVault.Services
+@inject VaultService Vault
+@inject PdfExportService PdfExport
+
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Overzicht</h1>
+            <p class="page-subtitle">@filteredEntries.Count item(s) gevonden</p>
+        </div>
+        <button class="btn-pdf" @onclick="ExportPdf">📄 Exporteer PDF</button>
+    </div>
+
+    @if (pdfMessage != null)
+    {
+        <div class="alert-success">✅ @pdfMessage</div>
+    }
+
+    <!-- Search & filter bar -->
+    <div class="search-bar">
+        <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" @bind="searchQuery" @bind:event="oninput"
+                   placeholder="Zoek op titel, gebruikersnaam, URL..." />
+            @if (!string.IsNullOrEmpty(searchQuery))
+            {
+                <button class="clear-search" @onclick="() => searchQuery = string.Empty">✕</button>
+            }
+        </div>
+        <div class="filter-pills">
+            <button class="pill @(activeFilter == null ? "active" : "")" @onclick="() => activeFilter = null">Alles</button>
+            @foreach (EntryCategory cat in Enum.GetValues<EntryCategory>())
+            {
+                <button class="pill @(activeFilter == cat ? "active" : "")"
+                        @onclick="() => ToggleFilter(cat)">
+                    @GetCatIcon(cat) @GetCatLabel(cat)
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Entries list -->
+    @if (!filteredEntries.Any())
+    {
+        <div class="empty-state">
+            <span class="empty-icon">🔒</span>
+            <p>Geen items gevonden</p>
+            <small>Voeg items toe via de Ingave pagina</small>
+        </div>
+    }
+    else
+    {
+        <div class="entries-list">
+            @foreach (var e in filteredEntries)
+            {
+                <div class="entry-card @(expandedId == e.Id ? "expanded" : "")">
+                    <div class="entry-header" @onclick="() => ToggleExpand(e.Id)">
+                        <div class="entry-left">
+                            <span class="entry-cat-icon">@e.CategoryIcon</span>
+                            <div>
+                                <div class="entry-title">@e.Title</div>
+                                <div class="entry-meta">
+                                    @if (!string.IsNullOrEmpty(e.Username)) { <span>@e.Username</span> }
+                                    <span class="entry-date">@e.UpdatedAt.ToString("dd/MM/yyyy")</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="entry-right">
+                            <span class="expand-icon">@(expandedId == e.Id ? "▲" : "▼")</span>
+                        </div>
+                    </div>
+
+                    @if (expandedId == e.Id)
+                    {
+                        <div class="entry-details">
+                            @if (!string.IsNullOrEmpty(e.Password))
+                            {
+                                <div class="detail-row">
+                                    <span class="detail-label">Wachtwoord</span>
+                                    <div class="detail-value-wrap">
+                                        <span class="detail-value">@(shownPasswords.Contains(e.Id) ? e.Password : "••••••••")</span>
+                                        <button class="btn-tiny" @onclick="() => ToggleShowPassword(e.Id)">
+                                            @(shownPasswords.Contains(e.Id) ? "🙈" : "👁️")
+                                        </button>
+                                        <button class="btn-tiny" @onclick="() => CopyToClipboard(e.Password)">📋</button>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(e.Url))
+                            {
+                                <div class="detail-row">
+                                    <span class="detail-label">URL</span>
+                                    <span class="detail-value link">@e.Url</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(e.LicenseKey))
+                            {
+                                <div class="detail-row">
+                                    <span class="detail-label">Licentie</span>
+                                    <div class="detail-value-wrap">
+                                        <span class="detail-value mono">@e.LicenseKey</span>
+                                        <button class="btn-tiny" @onclick="() => CopyToClipboard(e.LicenseKey)">📋</button>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(e.PinCode))
+                            {
+                                <div class="detail-row">
+                                    <span class="detail-label">PIN</span>
+                                    <div class="detail-value-wrap">
+                                        <span class="detail-value">@(shownPasswords.Contains(e.Id) ? e.PinCode : "••••")</span>
+                                        <button class="btn-tiny" @onclick="() => ToggleShowPassword(e.Id)">
+                                            @(shownPasswords.Contains(e.Id) ? "🙈" : "👁️")
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(e.Note))
+                            {
+                                <div class="detail-row note-row">
+                                    <span class="detail-label">Notitie</span>
+                                    <span class="detail-value note">@e.Note</span>
+                                </div>
+                            }
+
+                            <div class="entry-actions">
+                                <button class="btn-edit" @onclick="() => StartEdit(e)">✏️ Bewerken</button>
+                                <button class="btn-delete" @onclick="() => DeleteEntry(e.Id)">🗑️ Verwijderen</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Edit modal -->
+@if (editEntry != null)
+{
+    <div class="modal-backdrop" @onclick="CancelEdit">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h2>✏️ Bewerken: @editEntry.Title</h2>
+                <button class="modal-close" @onclick="CancelEdit">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Titel</label>
+                    <input class="form-input" @bind="editEntry.Title" />
+                </div>
+                @if (editEntry.Category == EntryCategory.Website || editEntry.Category == EntryCategory.Software)
+                {
+                    <div class="form-group">
+                        <label class="form-label">Gebruikersnaam</label>
+                        <input class="form-input" @bind="editEntry.Username" />
+                    </div>
+                }
+                @if (editEntry.Category == EntryCategory.Website)
+                {
+                    <div class="form-group">
+                        <label class="form-label">Wachtwoord</label>
+                        <input class="form-input" type="text" @bind="editEntry.Password" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">URL</label>
+                        <input class="form-input" @bind="editEntry.Url" />
+                    </div>
+                }
+                @if (editEntry.Category == EntryCategory.Software)
+                {
+                    <div class="form-group">
+                        <label class="form-label">Licentie Sleutel</label>
+                        <input class="form-input" @bind="editEntry.LicenseKey" />
+                    </div>
+                }
+                @if (editEntry.Category == EntryCategory.PinCode)
+                {
+                    <div class="form-group">
+                        <label class="form-label">PIN Code</label>
+                        <input class="form-input" @bind="editEntry.PinCode" />
+                    </div>
+                }
+                <div class="form-group">
+                    <label class="form-label">Notitie</label>
+                    <textarea class="form-textarea" @bind="editEntry.Note" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-reset" @onclick="CancelEdit">Annuleren</button>
+                <button class="btn-save" @onclick="SaveEdit">💾 Opslaan</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string searchQuery = "";
+    private EntryCategory? activeFilter = null;
+    private Guid? expandedId = null;
+    private HashSet<Guid> shownPasswords = new();
+    private VaultEntry? editEntry = null;
+    private string? pdfMessage = null;
+
+    private List<VaultEntry> filteredEntries =>
+        Vault.Search(searchQuery, activeFilter);
+
+    private void ToggleFilter(EntryCategory cat)
+    {
+        activeFilter = activeFilter == cat ? null : cat;
+    }
+
+    private void ToggleExpand(Guid id)
+    {
+        expandedId = expandedId == id ? null : id;
+    }
+
+    private void ToggleShowPassword(Guid id)
+    {
+        if (shownPasswords.Contains(id)) shownPasswords.Remove(id);
+        else shownPasswords.Add(id);
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        await Task.Run(() =>
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                System.Windows.Clipboard.SetText(text);
+            });
+        });
+    }
+
+    private void StartEdit(VaultEntry e)
+    {
+        editEntry = new VaultEntry
+        {
+            Id = e.Id,
+            Category = e.Category,
+            Title = e.Title,
+            Username = e.Username,
+            Password = e.Password,
+            Url = e.Url,
+            LicenseKey = e.LicenseKey,
+            PinCode = e.PinCode,
+            Note = e.Note,
+            CreatedAt = e.CreatedAt,
+            UpdatedAt = e.UpdatedAt
+        };
+    }
+
+    private void SaveEdit()
+    {
+        if (editEntry != null)
+        {
+            Vault.Update(editEntry);
+            editEntry = null;
+        }
+    }
+
+    private void CancelEdit() => editEntry = null;
+
+    private void DeleteEntry(Guid id)
+    {
+        Vault.Delete(id);
+        if (expandedId == id) expandedId = null;
+    }
+
+    private void ExportPdf()
+    {
+        var all = Vault.GetAll();
+        string path = PdfExport.ExportToPdf(all, Vault.VaultFolder);
+        pdfMessage = $"PDF opgeslagen: {Path.GetFileName(path)}";
+        StateHasChanged();
+    }
+
+    private string GetCatIcon(EntryCategory cat) => cat switch
+    {
+        EntryCategory.Website => "🌐",
+        EntryCategory.Software => "💿",
+        EntryCategory.PinCode => "🔢",
+        EntryCategory.Note => "📝",
+        _ => ""
+    };
+
+    private string GetCatLabel(EntryCategory cat) => cat switch
+    {
+        EntryCategory.Website => "Website",
+        EntryCategory.Software => "Software",
+        EntryCategory.PinCode => "PIN",
+        EntryCategory.Note => "Notitie",
+        _ => ""
+    };
+}

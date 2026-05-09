@@ -1,0 +1,166 @@
+@page "/"
+@using PasswordVault.Models
+@using PasswordVault.Services
+@inject VaultService Vault
+
+<div class="page-container">
+    <div class="page-header">
+        <h1 class="page-title">Nieuwe Ingave</h1>
+        <p class="page-subtitle">Voeg een nieuw item toe aan je kluis</p>
+    </div>
+
+    @if (saved)
+    {
+        <div class="alert-success">
+            ✅ Opgeslagen! Item toegevoegd aan je kluis.
+        </div>
+    }
+
+    <div class="form-card">
+        <!-- Category selector -->
+        <div class="category-selector">
+            @foreach (EntryCategory cat in Enum.GetValues<EntryCategory>())
+            {
+                <button class="cat-btn @(entry.Category == cat ? "active" : "")"
+                        @onclick="() => { entry.Category = cat; saved = false; }">
+                    @GetCatIcon(cat) @GetCatLabel(cat)
+                </button>
+            }
+        </div>
+
+        <!-- Title (always shown) -->
+        <div class="form-group">
+            <label class="form-label">Titel *</label>
+            <input class="form-input" @bind="entry.Title" placeholder="Bijv. Gmail, Netflix, KBC..." />
+        </div>
+
+        <!-- Website fields -->
+        @if (entry.Category == EntryCategory.Website)
+        {
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Gebruikersnaam / E-mail</label>
+                    <input class="form-input" @bind="entry.Username" placeholder="gebruiker@email.com" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Wachtwoord</label>
+                    <div class="input-with-toggle">
+                        <input class="form-input" type="@(showPw ? "text" : "password")"
+                               @bind="entry.Password" placeholder="••••••••" />
+                        <button class="toggle-pw" @onclick="() => showPw = !showPw">
+                            @(showPw ? "🙈" : "👁️")
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">URL / Website</label>
+                <input class="form-input" @bind="entry.Url" placeholder="https://..." />
+            </div>
+        }
+
+        <!-- Software fields -->
+        @if (entry.Category == EntryCategory.Software)
+        {
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Gebruikersnaam / E-mail</label>
+                    <input class="form-input" @bind="entry.Username" placeholder="gebruiker@email.com" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Licentie Sleutel</label>
+                    <input class="form-input" @bind="entry.LicenseKey" placeholder="XXXX-XXXX-XXXX-XXXX" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Website / Download URL</label>
+                <input class="form-input" @bind="entry.Url" placeholder="https://..." />
+            </div>
+        }
+
+        <!-- PIN fields -->
+        @if (entry.Category == EntryCategory.PinCode)
+        {
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">PIN Code</label>
+                    <div class="input-with-toggle">
+                        <input class="form-input" type="@(showPw ? "text" : "password")"
+                               @bind="entry.PinCode" placeholder="••••" />
+                        <button class="toggle-pw" @onclick="() => showPw = !showPw">
+                            @(showPw ? "🙈" : "👁️")
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extra info (optioneel)</label>
+                    <input class="form-input" @bind="entry.Username" placeholder="Bijv. kaartnummer, bank..." />
+                </div>
+            </div>
+        }
+
+        <!-- Note fields -->
+        @if (entry.Category == EntryCategory.Note)
+        {
+            <div class="form-group">
+                <label class="form-label">Geheime Notitie</label>
+                <textarea class="form-textarea" @bind="entry.Note" placeholder="Schrijf hier je geheime notitie..." rows="5"></textarea>
+            </div>
+        }
+
+        <!-- Universal note -->
+        @if (entry.Category != EntryCategory.Note)
+        {
+            <div class="form-group">
+                <label class="form-label">Extra notitie (optioneel)</label>
+                <textarea class="form-textarea" @bind="entry.Note" placeholder="Eventuele opmerkingen..." rows="3"></textarea>
+            </div>
+        }
+
+        <div class="form-actions">
+            <button class="btn-reset" @onclick="Reset">🗑️ Leegmaken</button>
+            <button class="btn-save" @onclick="Save" disabled="@string.IsNullOrWhiteSpace(entry.Title)">
+                💾 Opslaan in Kluis
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private VaultEntry entry = new();
+    private bool showPw = false;
+    private bool saved = false;
+
+    private void Save()
+    {
+        Vault.Add(entry);
+        saved = true;
+        entry = new();
+        showPw = false;
+    }
+
+    private void Reset()
+    {
+        entry = new();
+        showPw = false;
+        saved = false;
+    }
+
+    private string GetCatIcon(EntryCategory cat) => cat switch
+    {
+        EntryCategory.Website => "🌐",
+        EntryCategory.Software => "💿",
+        EntryCategory.PinCode => "🔢",
+        EntryCategory.Note => "📝",
+        _ => ""
+    };
+
+    private string GetCatLabel(EntryCategory cat) => cat switch
+    {
+        EntryCategory.Website => "Website",
+        EntryCategory.Software => "Software",
+        EntryCategory.PinCode => "PIN / Bankkaart",
+        EntryCategory.Note => "Notitie",
+        _ => ""
+    };
+}
